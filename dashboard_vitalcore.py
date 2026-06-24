@@ -49,7 +49,7 @@ if medico_input:
     
     if not df_pacientes.empty:
         # Mostramos la tabla interactiva
-        st.dataframe(df_pacientes, use_container_width=True)
+        st.dataframe(df_pacientes.drop(columns=['paciente_id']), use_container_width=True)
         
         # --- KPI 2: Telemetría de un Paciente ---
         # --- KPI 2: Telemetría de un Paciente ---
@@ -57,7 +57,9 @@ if medico_input:
         st.subheader("📈 Curva de Glucosa Histórica")
         
         # 1. Seleccionar el paciente
-        paciente_seleccionado = st.selectbox("Seleccione un paciente para ver su telemetría:", df_pacientes['paciente_id'])
+        #paciente_seleccionado = st.selectbox("Seleccione un paciente para ver su telemetría:", df_pacientes['paciente_id'])
+        nombres_dict = dict(zip(df_pacientes['paciente_id'], df_pacientes['nombre_paciente']))
+        paciente_seleccionado = st.selectbox("Seleccione un paciente para ver su telemetría:", df_pacientes['paciente_id'], format_func=lambda x: nombres_dict[x])
         
         # 2. NUEVO: Calcular dinámicamente los últimos 6 meses para el menú desplegable
         meses_disponibles = [(pd.Timestamp.now() - pd.DateOffset(months=i)).strftime('%Y-%m') for i in range(6)]
