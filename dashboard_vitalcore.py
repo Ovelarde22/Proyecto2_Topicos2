@@ -17,18 +17,26 @@ session = get_cassandra_session()
 
 # 3. Función auxiliar para obtener un ID de médico al azar y no tener que tipear UUIDs
 @st.cache_data
-def obtener_lista_medicos():
-    filas = session.execute("SELECT DISTINCT medico_id FROM ultimo_estado_paciente_por_medico")
-    return [fila.medico_id for fila in filas]
+def obtener_medicos_mapeo():
+    filas = session.execute("SELECT medico_id, nombre_medico FROM ultimo_estado_paciente_por_medico")
+    
+    diccionario_medicos = {}
+    for fila in filas:
+        diccionario_medicos[str(fila.medico_id)] = fila.nombre_medico
+    return diccionario_medicos
 
-lista_medicos = obtener_lista_medicos()
+medicos_dict = obtener_medicos_mapeo()
 
 # --- INTERFAZ DE USUARIO ---
 st.sidebar.header("Panel de Control")
-medico_input = st.sidebar.selectbox("ID del Médico (UUID):", options=lista_medicos)
+medico_input = st.sidebar.selectbox(
+    "Médico a cargo:", 
+    options=list(medicos_dict.keys()),
+    format_func=lambda x: medicos_dict.get(x, str(x))
+)
 
 if medico_input:
-    st.header("Pacientes Activos y Nivel de Riesgo")
+    st.header(f"Pacientes Activos y Nivel de Riesgo — {medicos_dict.get(medico_input, 'Médico Desconocido')}")
     
     # --- KPI 1: Dashboard del Médico ---
     inicio_query_1 = time.time()
@@ -38,30 +46,37 @@ if medico_input:
     filas_pacientes = session.execute(query_pacientes)
     df_pacientes = pd.DataFrame(list(filas_pacientes))
 
-    df_pacientes['paciente_id'] = df_pacientes['paciente_id'].astype(str) 
-    df_pacientes['ultimo_valor'] = df_pacientes['ultimo_valor'].astype(float).round(2)
-
     fin_query_1 = time.time()
     latencia_ms = (fin_query_1 - inicio_query_1) * 1000
     
-    # Mostramos el KPI de Latencia que exige la rúbrica
+    # Se muestra la Latencia
     st.metric(label="⏱️ Tiempo de Respuesta (Latencia de Cassandra)", value=f"{latencia_ms:.2f} ms")
     
     if not df_pacientes.empty:
-        # Mostramos la tabla interactiva
-        st.dataframe(df_pacientes.drop(columns=['paciente_id']), use_container_width=True)
+        df_pacientes['paciente_id'] = df_pacientes['paciente_id'].astype(str)  # Convertimos a string para mostrar en la tabla
+        df_pacientes['ultimo_valor'] = df_pacientes['ultimo_valor'].astype(float).round(2)  # Redondeamos a 2 decimales
         
-        # --- KPI 2: Telemetría de un Paciente ---
+        # Se muesta la tabla interactiva
+        columnas_nuevas ={
+            'nombre_paciente': 'Nombre del paciente',
+            'ultimo_tipo_sensor': 'Último tipo de sensor',
+            'ultimo_valor': 'Último valor registrado',
+            'nivel_riesgo': 'Nivel de riesgo'
+        }
+        
+        # Cambio de nombre de las columnas y eliminación de la columna paciente_id para mostrar en la tabla
+        df_visible = df_pacientes.drop(columns=['paciente_id']).rename(columns=columnas_nuevas)
+        st.dataframe(df_visible, use_container_width=True)
+        
         # --- KPI 2: Telemetría de un Paciente ---
         st.markdown("---")
         st.subheader("📈 Curva de Glucosa Histórica")
         
         # 1. Seleccionar el paciente
-        #paciente_seleccionado = st.selectbox("Seleccione un paciente para ver su telemetría:", df_pacientes['paciente_id'])
         nombres_dict = dict(zip(df_pacientes['paciente_id'], df_pacientes['nombre_paciente']))
         paciente_seleccionado = st.selectbox("Seleccione un paciente para ver su telemetría:", df_pacientes['paciente_id'], format_func=lambda x: nombres_dict[x])
         
-        # 2. NUEVO: Calcular dinámicamente los últimos 6 meses para el menú desplegable
+        # 2. Cáculo dinámico de los últimos 6 meses para el menú desplegable
         meses_disponibles = [(pd.Timestamp.now() - pd.DateOffset(months=i)).strftime('%Y-%m') for i in range(6)]
         mes_seleccionado = st.selectbox("Seleccione el mes a visualizar:", meses_disponibles)
         
